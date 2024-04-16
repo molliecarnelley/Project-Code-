@@ -7,9 +7,9 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Two-dimensional derivative information emulators for an SIRS disease model. The code here is an extension of that in the <a href="https://www.maths.dur.ac.uk/users/i.r.vernon/UQIV/_site/index.html" >Uncertainty Quantification IV Computer Practicals</a>.
+Supplementary code for the two-dimensional derivative information emulators, of the SIRS disease model, constructed in Chapter 4. The code here is an extension of that in the <a href="https://www.maths.dur.ac.uk/users/i.r.vernon/UQIV/_site/index.html" >Uncertainty Quantification IV Computer Practicals</a>.
 
-We define the following SIRS disease model and  use a numerical solver to solve the differential equations for S, I and R:
+We define the following SIRS disease model and use a numerical solver to solve the differential equations for S, I and R:
 
 ```{r}
 # deSolve is used to numerically solve ODEs
