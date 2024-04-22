@@ -7,16 +7,16 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Supplementary code for the two-dimensional derivative information emulators, of the SIRS disease model, constructed in Chapter 4. The code here is an extension of that in the <a href="https://www.maths.dur.ac.uk/users/i.r.vernon/UQIV/_site/index.html" >Uncertainty Quantification IV Computer Practicals</a>.
+Supplementary code to construct two-dimensional derivative information emulators for the SIRS disease model introduced in Chapter 4. To build these emulators, I have followed and extended the code in the <a href="https://www.maths.dur.ac.uk/users/i.r.vernon/UQIV/_site/index.html" >Uncertainty Quantification IV Computer Practicals</a>.
 
-We define the following SIRS disease model and use a numerical solver to solve the differential equations for S, I and R:
+We define our SIRS disease model and use a numerical solver to solve the differential equations for S, I and R:
 
 ```{r}
-# deSolve is used to numerically solve ODEs
+# We will use the 'lsoda' numerical ODE solver from the deSolve package
 library(deSolve)
 
-# Define the SIRSS Disease model. Note x1 = alpha_SI, x2 = alpha_IR, x3 = alpha_SR .
-# S = number of susceptible people, I = number of infected people, R = number of recovered people.
+# Define the SIRS Disease model. Here, x1 = alpha_SI, x2 = alpha_IR, x3 = alpha_SR .
+# S = number of susceptible individuals, I = number of infected individuals, R = number of recovered individuals.
 SIRS_Disease_Model <- function(t, y, parms) {		
   with(as.list(parms),{
     N  <-  y["S"] + y["I"] + y["R"]
@@ -28,45 +28,20 @@ SIRS_Disease_Model <- function(t, y, parms) {
   })
 }
 
-
 ```
 
-We set some initial parameters (midrange values), an initial configuration and a time period up from t=0 to t=100:
+Specify our initial configuration and time point of interest t=10:
+
 ```{r}
-
-# Set input parameters to their midrange values
-parms = c(  x1 = 0.45, x2 = 0.25, x3 = 0.025 )
-
 # Initial configuration for the number of individuals in compartment S, I and R at time t=0
 ystart <- c(S = 850, I = 150, R = 0)				
 
 # Define the time period
-times <- seq(0, 100, length=1001)
+times <- seq(0, 10, length=100)
 
 ```
 
-Solve the differential equations and plot the output:
-```{r}
-# Run the lsoda solver to solve the differential equations in the SIRS model
-out <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000))  
-
-# "out" has first column time points, 2nd S, 3rd I and 4th R number
-head(out)
-
-# Plot results of the model output
-plot_run <- function(){
-  plot(out[,"time"],out[,"S"],lwd=6,col=4,ty="l",ylim=c(0,max(out[,-1])),xlab="time (t)",ylab="Number of People")
-  lines(out[,"time"],out[,"I"],lwd=6,col=2)
-  lines(out[,"time"],out[,"R"],lwd=6,col=3)
-  legend("topright",legend=c("S = Susceptible"," I = Infected","R = Recovered"),col=c(4,2,3),lwd=6)
-}
-
-plot_run()
-
-```
-
-
-Bayes linear emulator without using any partial derivative information:
+Original Bayes linear emulator without any derivative information:
 
 ```{r}
 simple_BL_emulator_v2 <- function(x,              # the emulator prediction point
@@ -104,7 +79,6 @@ simple_BL_emulator_v2 <- function(x,              # the emulator prediction poin
 
   for(j in 1:n) Cov_fx_D[1,j] <- Cov_fx_fxdash(x,xD[j,])    
   
-  
   # Perform Bayes Linear adjustment to find Adjusted Expectation and Variance of f(x)
   ED_fx   <-  E_fx + Cov_fx_D %*% solve(Var_D) %*% (D - E_D)   
   VarD_fx <-  Var_fx - Cov_fx_D %*% solve(Var_D) %*% t(Cov_fx_D)  
@@ -117,6 +91,7 @@ simple_BL_emulator_v2 <- function(x,              # the emulator prediction poin
 ```
 
 Create a 16-point maximin Latin hypercube design:
+
 ```{r}
 lhd_maximin <- function(nl){                    # nl = number of points in LHD 
   
@@ -146,7 +121,7 @@ set.seed(15)
 x_lhd<- lhd_maximin(16)
 xD <- x_lhd
 
-### plot maximin Latin hypercube design
+# plot maximin Latin hypercube design
 
 plot(xD,xlim=c(0,1),ylim=c(0,1),pch=16,xaxs="i",yaxs="i",col="blue",xlab="x1",ylab="x2",cex=1.4)
 abline(h=(0:16)/16,col="grey60")
@@ -162,7 +137,7 @@ xD_scaled[,1] <- xD[,1]*0.7+0.1
 xD_scaled[,2] <- xD[,2]*0.5
 ```
 
-We evaluate the true SIRS model for our 16 design runs and extract the model output at t=10 (this corresponds to the 101st row of the output matrix):
+Evaluate the true SIRS model for at these 16 design runs and extract the model output at t=10 (this corresponds to row 100 in the output matrix):
 
 ```{r}
 # Perform 16 runs of the SIRS model extracting the output for t=10 and store as D 
@@ -171,31 +146,28 @@ D <- NULL
 for(i in 1:nrow(xD_scaled)){
   parms = c( xD_scaled[i,1], xD_scaled[i,2], x3 = 0.04)
   # Extract the output at t=10, this corresponds to the 101st row 
-  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [101,"I"]
+  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [100,"I"]
   D <- c(D,infected)
   
 }		
 ```
 
-Define 50x50 grid of prediction points xP for input into our emulator:
+Define a 50x50 grid of prediction points xP to evaluate our emulator at:
 
 ```{r}
 x_grid <- seq(-0.001,1.001,len=50)
 xP <- as.matrix(expand.grid("x1"=x_grid,"x2"=x_grid))
 ```
 
-
-
-Emulate over this grid of prediction points and extract the expectation and variance:
+Emulate over this grid of prediction points and extract the emulator expectation and variance:
 
 ```{r}
-# Evaluate emulator over 50x50=2500 prediction points xP
 em_out <- t(apply(xP,1,simple_BL_emulator_v2,xD=xD,D=D,theta=0.25,sigma=250,E_f=350))   
 E_D_fx_mat <- matrix(em_out[,"ExpD_f(x)"],nrow=length(x_grid),ncol=length(x_grid)) 
 Var_D_fx_mat <- matrix(em_out[,"VarD_f(x)"],nrow=length(x_grid),ncol=length(x_grid)) 
 ```
 
-Here is the plotting function for our output:
+Plotting function for our output:
 
 ```{r}
 ### define filled contour plot function for emulator output ###
@@ -233,7 +205,7 @@ var_cols <-  function(n) hcl.colors(n, "blues3", rev = TRUE)
 diag_cols <- turbo
 ```
 
-Plot the emulator adjusted expectation and variance:
+Create emulator adjusted expectation and variance plots:
 
 ```{r}
 
@@ -246,14 +218,14 @@ emul_fill_cont(cont_mat=Var_D_fx_mat,cont_levs=NULL,xD=xD,x_grid=x_grid,
                main="Emulator Adjusted Variance Var_D[f(x)]")
 ```
 
-In this instance we can plot the true 2-dimensional output of our SIRS model:
+Plot the true output of our SIRS model:
 
 ```{r}
 f <- NULL
 for(i in 1:nrow(xP)){
   
   parms = c( xP[i,1]*0.7+0.1, xP[i,2]*0.5, x3 = 0.04)
-  out <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [101,"I"]
+  out <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [100,"I"]
   f <-  c(f,out)
 }
 fxP_mat <- matrix(f,nrow=length(x_grid),ncol=length(x_grid)) 
@@ -266,7 +238,7 @@ emul_fill_cont(cont_mat=fxP_mat,cont_levs=seq(-50,1000,50),xD=xD,x_grid=x_grid,
 
 ```
 
-Plotting the diagnostics:
+Plot the diagnostics:
 
 ```{r}
 S_diag_mat <- (E_D_fx_mat - fxP_mat) / sqrt(Var_D_fx_mat)
@@ -277,17 +249,15 @@ emul_fill_cont(cont_mat=S_diag_mat,cont_levs=seq(-3,3,0.25),xD=xD,x_grid=x_grid,
                main="Emulator Diagnostics S_D[f(x)]")
 ```
 
-We can see that the diagnostics look fine!
 
-Derivative information can be extracted from the following adjoint SIRSS model:
+We code our adjoint SIRS model as follows:
 
 ```{r}
-### Define the SIRS Disease model. Note x1 = alpha_SI, x2 = alpha_IR, x3 = alpha_SR 
-### S = number of susceptible people, I = number of infected people, R = number of recovered people.
+# Define the SIRS Disease model. Here, x1 = alpha_SI, x2 = alpha_IR, x3 = alpha_SR .
+# This model solves for S,I and R, and the partial derivatives of these outputs with respect to x1, x2 and x3
 SIRS_Disease_Model_adjoint <- function(t, y, parms) {	
 
   with(as.list(parms),{
-    
  
     N  <-  y["S"] + y["I"] + y["R"]
     dS  	=   x3 * y["R"]  -  x1 * y["S"] * y["I"] / N
@@ -315,7 +285,7 @@ SIRS_Disease_Model_adjoint <- function(t, y, parms) {
 ```
 
 
-Bayes linear emulator using partial derivative information in both the $x_1$ and $x_2$ directions:
+Bayes linear emulator incorporating derivative information in both the $x_1$ and $x_2$ directions:
 
 ```{r}
 simple_BL_emulator_v2_dev<- function(x,              # the emulator prediction point
@@ -329,8 +299,6 @@ simple_BL_emulator_v2_dev<- function(x,              # the emulator prediction p
                                   n_x2=16         # the number of x2 derivatives 
 ){
   
-
-
   # Define Covariance structure of f(x): Cov[f(x),f(xdash)] 
   Cov_fx_fxdash <- function(x,xdash) sigma^2 * exp(-sum((x-xdash)^2)/theta^2)
   
@@ -353,10 +321,8 @@ simple_BL_emulator_v2_dev<- function(x,              # the emulator prediction p
   # Mixed partial derivatives  
   Cov_mixed <- function(x,xdash) -4*sigma^2 *(x[2]-xdash[2])*(x[1]-xdash[1]) *exp(-sum((x-xdash)^2)/theta^2)/theta^4
   
-
-  
   # Create E[D] vector
-  # Give the derivatives zero expectation
+  # We give each partial derivative zero expectation
   E_D <- c(rep(E_f,n),rep(0,n_x1),rep(0,n_x2))
   #E_D <- c(rep(E_f,n+n_x1+n_x2))
   
@@ -401,7 +367,6 @@ simple_BL_emulator_v2_dev<- function(x,              # the emulator prediction p
   # Covariance for x2 partial derivatives
   for(j in (n+n_x1+1):(n+n_x1+n_x2)) Cov_fx_D[1,j] <- Cov_fx_fxdash_dx2dash(x,xD[j,])
   
-
   #Perform Bayes Linear adjustment to find Adjusted Expectation and Variance of f(x)
   ED_fx   <-  E_fx + Cov_fx_D %*% solve(Var_D) %*% (D - E_D)   
   VarD_fx <-  Var_fx - Cov_fx_D %*% solve(Var_D) %*% t(Cov_fx_D)  
@@ -414,11 +379,10 @@ simple_BL_emulator_v2_dev<- function(x,              # the emulator prediction p
 
 ```
 
-Calculate all partial derivatives in the $x_1$ and $x_2$ direction:
+Calculate all partial derivative information in the $x_1$ and $x_2$ direction using the adjoint model:
 
 ```{r}
-# Starting configuration for the SIRSS model 
-
+# Starting configuration for the adjoint SIRS model 
 ystart <- c(S = 850, I = 150, R = 0, dSdx1=0, dSdx2=0, dSdx3=0, dIdx1=0, dIdx2=0, dIdx3=0, dRdx1=0, dRdx2=0, dRdx3=0)
 
 
@@ -426,23 +390,25 @@ x1_dev <- NULL
 for(i in 1:nrow(xD)){
   parms = c(xD_scaled[i,1], xD_scaled[i,2], x3=0.04,dSdx1 = 0, dIdx1 = 0, dRdx1 = 0, dSdx2 = 0, dIdx2 = 0, dRdx2 = 0, dSdx3 = 0, dIdx3 = 0, dRdx3 = 0)
   # Extract the output at t=10, this corresponds to the 101st row 
-  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model_adjoint, parms, maxsteps=200000)) [101,"dIdx1"]
+  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model_adjoint, parms, maxsteps=200000)) [100,"dIdx1"]
   x1_dev <- c(x1_dev,infected)
   
 }		
 
+# Transform derivatives to their original scale
 x1_dev <- x1_dev*0.7
-# To get original scale just multiply by 0.7
+
 
 x2_dev <- NULL
 for(i in 1:nrow(xD_scaled)){
   parms = c(xD_scaled[i,1], xD_scaled[i,2], x3=0.04, dSdx1 = 0, dIdx1 = 0, dRdx1 = 0, dSdx2 = 0, dIdx2 = 0, dRdx2 = 0, dSdx3 = 0, dIdx3 = 0, dRdx3 = 0)
   # Extract the output at t=10, this corresponds to the 101st row 
-  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model_adjoint, parms, maxsteps=20000)) [101,"dIdx2"]
+  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model_adjoint, parms, maxsteps=20000)) [100,"dIdx2"]
   x2_dev <- c(x2_dev,infected)
   
 }	
 
+# Transform derivatives to their original scale
 x2_dev <- x2_dev*0.5
 
 ```
@@ -453,13 +419,13 @@ Emulate using this complete derivative information:
 ```{r}
 # Add this derivative information to D
 D <- c(D,x1_dev,x2_dev)
+
 # Record the input points for each partial derivative
 xD <- rbind(xD,xD,xD)
 
+# Emulate
 em_out <- t(apply(xP,1,simple_BL_emulator_v2_dev,xD=xD,D=D,theta=0.25,sigma=250,E_f=350))
 
-
-### store emulator output as matrices to aid plotting ###
 E_D_fx_mat <- matrix(em_out[,"ExpD_f(x)"],nrow=length(x_grid),ncol=length(x_grid)) 
 Var_D_fx_mat <- matrix(em_out[,"VarD_f(x)"],nrow=length(x_grid),ncol=length(x_grid)) 
 
@@ -475,7 +441,7 @@ emul_fill_cont(cont_mat=Var_D_fx_mat,cont_levs=NULL,xD=xD,x_grid=x_grid,
 ```
 
 
-Plotting the diagnostics:
+Plot the diagnostics:
 
 ```{r}
 S_diag_mat <- (E_D_fx_mat - fxP_mat) / sqrt(Var_D_fx_mat)
@@ -486,7 +452,7 @@ emul_fill_cont(cont_mat=S_diag_mat,cont_levs=seq(-3,3,0.25),xD=xD,x_grid=x_grid,
                main="Emulator Diagnostics S_D[f(x)]")
 ```
 
-Considering only the derivative information in the $x_1$ direction:
+Consider only the derivative information in the $x_1$ direction:
 
 ```{r}
 simple_BL_emulator_v2_x1 <- function(x,              # the emulator prediction point
@@ -560,10 +526,9 @@ simple_BL_emulator_v2_x1 <- function(x,              # the emulator prediction p
 }
 ```
 
-Emulate only considering the partial derivatives for all of the known runs in the $x_1$ direction:
+Emulate using on the partial derivatives for at the known runs in the $x_1$ direction:
 
 ```{r}
-
 ystart <- c(S = 850, I = 150, R = 0)
 
 
@@ -572,7 +537,7 @@ D <- NULL
 
 for(i in 1:nrow(xD_scaled)){
   parms = c( xD_scaled[i,1], xD_scaled[i,2], x3 = 0.04)
-  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [101,"I"]
+  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [100,"I"]
   D <- c(D,infected)
   
 }		
@@ -604,7 +569,7 @@ emul_fill_cont(cont_mat=Var_D_fx_mat,cont_levs=NULL,xD=xD,x_grid=x_grid,
 ```
 
 
-Now just including all of the partial derivatives in the $x_2$ direction:
+Now just include all of the partial derivatives in the $x_2$ direction:
 
 ```{r}
 simple_BL_emulator_v2_x2 <- function(x,              # the emulator prediction point
@@ -675,14 +640,16 @@ simple_BL_emulator_v2_x2 <- function(x,              # the emulator prediction p
 ```
 
 Rebuilding the emulator:
+
 ```{r}
 xD <- x_lhd
+
 # Perform 16 runs of the SIR model extracting the output for t=10 and store as D 
 D <- NULL
 
 for(i in 1:nrow(xD_scaled)){
   parms = c( xD_scaled[i,1], xD_scaled[i,2], x3 = 0.04)
-  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [101,"I"]
+  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [100,"I"]
   D <- c(D,infected)
   
 }		
@@ -712,7 +679,7 @@ emul_fill_cont(cont_mat=Var_D_fx_mat,cont_levs=NULL,xD=xD,x_grid=x_grid,
 
 
 
-Now emulate over the 2-dimensional input space of $x_1$ and $x_3$ at time t=10, keeping $x_2=0.7$. Here $x_1 \in [0.1,0.8]$ and $x_3 \in [0,0.05]$ so we scale these input ranges to [0,1] for our emulation.
+Next, we will emulate the number of recovered individuals at t=10 over the 2-dimensional input space of $x_1$ and $x_3$, keeping $x_2=0.7$. Here $x_1 \in [0.1,0.8]$ and $x_3 \in [0,0.05]$ so we scale these input ranges to [0,1] for our emulation. For this emulator we use a smaller initial design of an 8-point maximin Latin hypercube.
 
 ```{r}
 set.seed(29)
@@ -730,13 +697,13 @@ D <- NULL
 for(i in 1:nrow(xD_scaled)){
   parms = c( x1=0.7, xD_scaled[i,1], xD_scaled[i,2])
   # Extract the output at t=10, this corresponds to the 101st row 
-  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [101,"R"]
+  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model, parms, maxsteps=20000)) [100,"R"]
   D <- c(D,infected)
   
 }		
 ```
  
-Emulator which includes derivative information and different correlation length in each direction:
+Derivative information emulator with different correlation lengths in each direction:
 
 ```{r}
 simple_BL_emulator_dev_theta<- function(x,              # the emulator prediction point
@@ -844,29 +811,31 @@ x2_dev <- NULL
 for(i in 1:nrow(xD)){
   parms = c(x1=0.7,xD_scaled[i,1], xD_scaled[i,2],dSdx1 = 0, dIdx1 = 0, dRdx1 = 0, dSdx2 = 0, dIdx2 = 0, dRdx2 = 0, dSdx3 = 0, dIdx3 = 0, dRdx3 = 0)
   # Extract the output at t=10, this corresponds to the 101st row 
-  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model_adjoint, parms, maxsteps=200000)) [101,"dRdx2"]
+  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model_adjoint, parms, maxsteps=200000)) [100,"dRdx2"]
   x2_dev <- c(x2_dev,infected)
   
 }		
 
+# Transform derivatives to original scale
 x2_dev <- x2_dev*0.5
-# To get original scale just multiply by 0.5
+
 
 x3_dev <- NULL
 for(i in 1:nrow(xD)){
   parms = c(x1=0.7,xD_scaled[i,1], xD_scaled[i,2],dSdx1 = 0, dIdx1 = 0, dRdx1 = 0, dSdx2 = 0, dIdx2 = 0, dRdx2 = 0, dSdx3 = 0, dIdx3 = 0, dRdx3 = 0)
   # Extract the output at t=10, this corresponds to the 101st row 
-  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model_adjoint, parms, maxsteps=200000)) [101,"dRdx3"]
+  infected <- as.matrix(lsoda(ystart, times, SIRS_Disease_Model_adjoint, parms, maxsteps=200000)) [100,"dRdx3"]
   x3_dev <- c(x3_dev,infected)
   
 }		
 
+# Transform derivatives to original scale
 x3_dev <- x3_dev*0.05
-# To get original scale just multiply by 0.5
+
 ```
 
 
-Add in this derivative information and emulate using different correlation lenghts:
+Add in this derivative information and emulate using these different correlation lenghts:
 
 ```{r}
 D <- c(D,x2_dev,x3_dev)
